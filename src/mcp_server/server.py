@@ -535,13 +535,15 @@ def execute_protective_put_order(
 
 
 def start_server():
-    """Start FastMCP server on configured port."""
+    """Start FastMCP server on configured port with Starlette ASGI app."""
+    import uvicorn
     port = int(os.getenv("PORT", "8080"))
     host = os.getenv("HOST", "0.0.0.0")
     transport = os.getenv("MCP_TRANSPORT", "sse")
 
     logger.info(f"Starting FastMCP Server '{mcp.name}' on {host}:{port} via transport '{transport}'...")
-    mcp.run(transport=transport, host=host, port=port)
+    app = mcp.http_app(transport=transport)
+    uvicorn.run(app, host=host, port=port, log_level=os.getenv("LOG_LEVEL", "info").lower())
 
 
 if __name__ == "__main__":
