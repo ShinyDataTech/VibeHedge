@@ -534,12 +534,54 @@ def execute_protective_put_order(
     return json.dumps(result, indent=2)
 
 
+import threading
+import time
+
+
+def autonomous_background_daemon():
+    """
+    Continuous 24/7 background worker loop that runs hedging reasoning cycles
+    autonomously at a configured interval (default: 300s = 5 minutes).
+    """
+    interval = int(os.getenv("AUTONOMOUS_CYCLE_INTERVAL_SECONDS", "300"))
+    symbol = os.getenv("HEDGE_TARGET_SYMBOL", "SPY")
+    logger.info(f"🤖 Autonomous Hedging Background Daemon initialized. Target: {symbol} | Interval: {interval}s")
+    
+    # Brief initial pause to let uvicorn finish binding port 8080 for startup probes
+    time.sleep(5)
+    
+    while True:
+        try:
+            logger.info(f"🔄 [Autonomous Cycle] Evaluating real-time risk & ForecastAgent macro signals for {symbol}...")
+            cycle_result_json = run_autonomous_hedging_cycle(symbol=symbol, auto_execute=True)
+            cycle_result = json.loads(cycle_result_json)
+            
+            if cycle_result.get("status") == "success":
+                plan = cycle_result.get("decision_plan", {})
+                action = plan.get("action", "UNKNOWN")
+                risk = plan.get("risk_evaluation", {}).get("risk_level", "UNKNOWN")
+                dd = plan.get("risk_evaluation", {}).get("drawdown_pct", 0.0) * 100
+                downtrend_p = plan.get("forecast_metrics", {}).get("downtrend_probability", 0.0) * 100
+                logger.info(f"✅ [Autonomous Cycle Completed] Action: {action} | Risk: {risk} | Drawdown: {dd:.2f}% | P(Down): {downtrend_p:.2f}%")
+            else:
+                logger.warning(f"⚠️ [Autonomous Cycle] Response: {cycle_result}")
+        except Exception as e:
+            logger.error(f"❌ [Autonomous Cycle Error] Background daemon encountered error: {e}", exc_info=True)
+        
+        time.sleep(interval)
+
+
 def start_server():
-    """Start FastMCP server on configured port with Starlette ASGI app."""
+    """Start FastMCP server on configured port with Starlette ASGI app and background loop."""
     import uvicorn
     port = int(os.getenv("PORT", "8080"))
     host = os.getenv("HOST", "0.0.0.0")
     transport = os.getenv("MCP_TRANSPORT", "sse")
+
+    # Start 24/7 autonomous hedging daemon thread
+    daemon_thread = threading.Thread(target=autonomous_background_daemon, daemon=True)
+    daemon_thread.start()
+    logger.info("Started 24/7 autonomous hedging background daemon thread.")
 
     logger.info(f"Starting FastMCP Server '{mcp.name}' on {host}:{port} via transport '{transport}'...")
     app = mcp.http_app(transport=transport)
